@@ -1,48 +1,62 @@
-#!/bin/bash
+#!/bin/sh
 
-wait () {
-    while [ "$(lsof -w -- /var/run/update-ipsets.lock)" ];
-    do
-        echo "waiting for update-ipsets to finish..."
+# shellcheck disable=SC3043 # local vars
+
+LOCK=~/.update-ipsets/update-ipsets.lock
+
+wait() {
+    local timeout=5 i=0
+    while [ "${i}" -lt "${timeout}" ]; do
+        if ! lsof -wt -- "${LOCK}" > /dev/null 2>&1; then
+            [ "${i}" -gt 0 ] && echo
+            return 0
+        fi
+        [ "${i}" -eq 0 ] && printf 'waiting for update-ipsets to finish...' || printf '.'
         sleep 1
+        i="$((i + 1))"
+    done
+    echo ' [timed out]'
+    return 1
+}
+
+enable_deps() {
+    local last_out="" out line dep nond
+    while :; do
+        wait || return 1
+        status="$(update-ipsets -s 2>&1)"
+
+        out="$(printf '%s\n' "${status}" | grep "will be generated without")"
+        [ -z "${out}" ] && return 0 # nothing to do
+
+        # bail if nothing has changed since last iteration
+        [ "${out}" = "${last_out}" ] && return 1
+
+        while read -r line; do
+            dep="$(printf '%s\n' "$line" | awk -F "[']" '{ print $2 }')"
+            if [ -n "${dep}" ]; then
+                echo "Attempting to enable dep: '$dep'..."
+                wait || return 1
+                update-ipsets enable "${dep}" 2>&1
+
+                # also enable version without _NNd suffix
+                nond="$(printf '%s\n' "${dep}" | sed -E 's/_[0-9]+d//g')"
+                if [ "${dep}" != "${nond}" ]; then
+                    echo "Attempting to enable dep: '$nond'..."
+                    wait || return 1
+                    update-ipsets enable "${nond}" 2>&1
+                fi
+            fi
+        done <<EOF
+${out}
+EOF
+        last_out="${out}"
     done
 }
 
-wait
-update-ipsets enable $1 2>&1
+wait || exit 1
+update-ipsets enable "${@}" 2>&1
 
-has_dep=true
-while $has_dep;
-do
-    has_dep=false
-    wait
-    out=`update-ipsets -s 2>&1 | grep "will be generated without"`
-    while read i;
-    do
-        f=`echo $i | awk -F "[']" '{ print $2 }'`
-        if [[ ! -z $f ]];
-        then
-            has_dep=true
-            wait
-            update-ipsets enable $f 2>&1
-            sf=`echo $f | sed -E 's/_[0-9]+d//g'`
-            if [ $f != $sf ];
-            then
-                wait
-                update-ipsets enable $sf 2>&1
-            fi
-        fi
-    done <<< "$out"
-done
+status=
+enable_deps
+echo "${status}"
 
-ipset-apply $1
-ipset save | grep create > /etc/firehol/ipsets/ipset-names.latest # save the latest ipsets (names only)
-
-if [[ -z `iptables -L INPUT | grep "match-set $1 src"` ]];
-then
-    iptables -I INPUT -m set --match-set $1 src -j DROP
-fi
-if [[ -z `iptables -L DOCKER-USER | grep "match-set $1 src"` ]];
-then
-    iptables -I DOCKER-USER -m set --match-set $1 src -j DROP
-fi
