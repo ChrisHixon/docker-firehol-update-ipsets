@@ -1,3 +1,17 @@
 #!/bin/sh
 
-docker run --name firehol-update-ipsets -it -d --restart=always --cap-add=NET_ADMIN --net=host devrt/firehol-update-ipsets
+NAME=firehol-update-ipsets
+IMAGE=firehol-update-ipsets
+USER=firehol-update-ipsets
+USER_DIR=./user-dir
+
+podman run \
+    --rm -it \
+    --name "${NAME}" \
+    --log-driver=none \
+    --uidmap 0:100000:65536 \
+    --gidmap 0:100000:65536 \
+    --no-hosts \
+    --mount="type=bind,src=${USER_DIR},target=/home/${USER}" \
+    "${IMAGE}" \
+    "$@"
