@@ -3,7 +3,7 @@ FROM alpine:3.22
 # Run as user
 ARG USERNAME=firehol-update-ipsets
 ARG USER_UID=6721
-ARG USER_GID=$USER_UID
+ARG USER_GID=6721
 
 # Create the user
 RUN addgroup -g $USER_GID $USERNAME \
