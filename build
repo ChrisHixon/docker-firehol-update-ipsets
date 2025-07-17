@@ -1,0 +1,8 @@
+#!/bin/sh
+
+TAG=firehol-update-ipsets
+
+podman build --pull --tag "${TAG}" \
+    --build-arg CACHE_BUST_DAILY=$(date +%Y-%m-%d) \
+    --build-arg CACHE_BUST_WEEKLY=$(date +%Y-%W) \
+    "$@" . 2>&1 | tee ./build-out.log
