@@ -1,42 +1,55 @@
-FROM alpine
+FROM alpine:3.21
 
-MAINTAINER Yosuke Matsusaka <yosuke.matsusaka@gmail.com>
+# Run as user
+ARG USERNAME=firehol-update-ipsets
+ARG USER_UID=6721
+ARG USER_GID=$USER_UID
 
-RUN apk add --no-cache tini bash ipset iproute2 curl unzip grep gawk lsof
+# Create the user
+RUN addgroup -g $USER_GID $USERNAME \
+    && adduser -u $USER_UID --disabled-password \
+       --uid $USER_UID -G $USERNAME --ingroup $USERNAME $USERNAME
 
-ENV IPRANGE_VERSION 1.0.3
+# Install run-time deps
+RUN apk add --no-cache bash ipset iproute2 curl unzip grep gawk lsof
 
+# Build and install iprange (remove build deps)
+ARG IPRANGE_VERSION=1.0.4
 RUN apk add --no-cache --virtual .iprange_builddep autoconf automake make gcc musl-dev && \
-    curl -L https://github.com/firehol/iprange/releases/download/v$IPRANGE_VERSION/iprange-$IPRANGE_VERSION.tar.gz | tar zvx -C /tmp && \
-    cd /tmp/iprange-$IPRANGE_VERSION && \
+    curl -L https://github.com/firehol/iprange/releases/download/v${IPRANGE_VERSION}/iprange-${IPRANGE_VERSION}.tar.gz | tar zvx -C /tmp && \
+    cd /tmp/iprange-${IPRANGE_VERSION} && \
+    ./autogen.sh && \
     ./configure --prefix= --disable-man && \
     make && \
     make install && \
     cd && \
-    rm -rf /tmp/iprange-$IPRANGE_VERSION && \
-    apk del .iprange_builddep
+    rm -rf /tmp/iprange-${IPRANGE_VERSION} && \
+    apk del  --no-cache .iprange_builddep
 
-ENV FIREHOL_VERSION 3.1.3
-
+# Build and install firehol (remove build deps)
+ARG FIREHOL_VERSION=3.1.8
 RUN apk add --no-cache --virtual .firehol_builddep autoconf automake make && \
-    curl -L https://github.com/firehol/firehol/releases/download/v$FIREHOL_VERSION/firehol-$FIREHOL_VERSION.tar.gz | tar zvx -C /tmp && \
-    cd /tmp/firehol-$FIREHOL_VERSION && \
+    curl -L https://github.com/firehol/firehol/releases/download/v${FIREHOL_VERSION}/firehol-${FIREHOL_VERSION}.tar.gz | tar zvx -C /tmp && \
+    cd /tmp/firehol-${FIREHOL_VERSION} && \
     ./autogen.sh && \
     ./configure --prefix= --disable-doc --disable-man && \
     make && \
     make install && \
-    cp contrib/ipset-apply.sh /bin/ipset-apply && \
     cd && \
     rm -rf /tmp/firehol-$FIREHOL_VERSION && \
-    apk del .firehol_builddep
+    apk del  --no-cache .firehol_builddep
 
-ADD enable /bin/enable
-ADD disable /bin/disable
-ADD update-ipsets-periodic /bin/update-ipsets-periodic
+# Upgrade packages weekly
+ARG CACHE_BUST_WEEKLY
+RUN apk update && apk upgrade --no-cache && rm -rf /var/cache/apk/*
 
-RUN update-ipsets -s
-VOLUME /etc/firehol/ipsets
+# Make sure the update-ipsets is up to date daily (contains lists which may update often)
+ARG CACHE_BUST_DAILY
+RUN curl -sS -o /sbin/update-ipsets \
+    'https://raw.githubusercontent.com/firehol/firehol/master/sbin/update-ipsets'
 
-ENTRYPOINT ["/sbin/tini", "--"]
+# switch to user
+ENV HOME=/home/$USERNAME PATH=$HOME/bin:$PATH
+WORKDIR $HOME
+USER $USERNAME
 
-CMD ["/bin/update-ipsets-periodic"]
