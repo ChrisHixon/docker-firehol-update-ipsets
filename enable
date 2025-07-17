@@ -1,6 +1,6 @@
 #!/bin/sh
-
 # shellcheck disable=SC3043 # local vars
+set -u
 
 LOCK=~/.update-ipsets/update-ipsets.lock
 
@@ -56,7 +56,7 @@ EOF
 wait || exit 1
 update-ipsets enable "${@}" 2>&1
 
-status=
+status=''
 enable_deps
-echo "${status}"
+printf '%s\n' "${status}"
 

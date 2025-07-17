@@ -49,7 +49,8 @@ RUN curl -sS -o /sbin/update-ipsets \
     'https://raw.githubusercontent.com/firehol/firehol/master/sbin/update-ipsets'
 
 # switch to user
-ENV HOME=/home/$USERNAME PATH=$HOME/bin:$PATH
+ENV HOME=/home/$USERNAME
+ENV PATH=$HOME/bin:$PATH
 WORKDIR $HOME
 USER $USERNAME
 
